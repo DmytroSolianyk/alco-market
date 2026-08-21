@@ -37,35 +37,42 @@ class Dashboard:
     # ------------------------------------------------------------- сторінки
 
     @staticmethod
-    def _carry(query: str, category: str, sort: str) -> str:
-        """Те, що має пережити перемикання вкладки."""
-        parts = []
+    def _carry(query: str, category: str, sort: str, discounts_only: bool) -> str:
+        """Те, що має пережити перемикання вкладки й пагінацію."""
+        parts = ["f=1"]
         if query:
             parts.append(f"q={quote_plus(query)}")
         if category:
             parts.append(f"cat={quote_plus(category)}")
         if sort:
             parts.append(f"sort={quote_plus(sort)}")
+        if discounts_only:
+            parts.append("d=1")
         return "&".join(parts)
 
     def _shell(self, conn, action: str, query: str, category: str, sort: str,
-               sort_options) -> dict:
+               sort_options, discounts_only: bool = True, mode: str = "list") -> dict:
         return {
             "search_action": action,
             "search_value": query,
             "filters": webui.filter_bar(
-                analytics.categories(conn), category, sort_options, sort),
-            "carry": self._carry(query, category, sort),
+                analytics.categories(conn, mode, discounts_only),
+                category, sort_options, sort,
+                discounts_only=discounts_only,
+                show_toggle=(mode == "list"),
+            ),
+            "carry": self._carry(query, category, sort, discounts_only),
         }
 
     def home(self, conn, query: str = "", category: str = "", sort: str = "",
-             page: int = 1) -> str:
-        """Вкладка «Знижки» — і нічого крім знижок."""
-        shell = self._shell(conn, "/", query, category, sort, analytics.SORT_OPTIONS)
+             page: int = 1, discounts_only: bool = True) -> str:
+        """Вкладка «Знижки». Галочкою можна показати весь асортимент."""
+        shell = self._shell(conn, "/", query, category, sort, analytics.SORT_OPTIONS,
+                            discounts_only)
         per = analytics.PAGE_SIZE
         result = analytics.top_discounts(
             conn, self.labels, limit=per, offset=(page - 1) * per,
-            query=query, category=category, sort=sort)
+            query=query, category=category, sort=sort, discounts_only=discounts_only)
         found, total = result["rows"], result["total"]
         page = result["offset"] // per + 1
 
@@ -85,14 +92,16 @@ class Dashboard:
             inner = webui.empty("Нічого не знайшлось",
                                 "Спробуй коротше слово або зніми фільтр категорії.")
 
+        title = "Знижки" if discounts_only else "Усі товари"
         body = (webui.kpis(analytics.overview(conn, self.labels))
-                + f'<section><h2>Знижки<span class="hint">{hint}</span></h2>{inner}</section>')
-        return webui.page("Знижки", body, active="home", **shell)
+                + f'<section><h2>{title}<span class="hint">{hint}</span></h2>{inner}</section>')
+        return webui.page(title, body, active="home", **shell)
 
     def cross_store(self, conn, query: str = "", category: str = "", sort: str = "",
-                    page: int = 1) -> str:
+                    page: int = 1, discounts_only: bool = True) -> str:
+        # Тут галочки немає: вкладка про різницю цін, а не про знижки.
         shell = self._shell(conn, "/cross-store", query, category, sort,
-                            analytics.GAP_SORT_OPTIONS)
+                            analytics.GAP_SORT_OPTIONS, discounts_only, mode="gap")
         per = analytics.PAGE_SIZE
         result = analytics.cross_store(
             conn, self.labels, limit=per, offset=(page - 1) * per,
@@ -114,8 +123,9 @@ class Dashboard:
         return webui.page("Де дешевше", body, active="gap", **shell)
 
     def fakes(self, conn, query: str = "", category: str = "", sort: str = "",
-              page: int = 1) -> str:
-        shell = self._shell(conn, "/fakes", query, category, sort, analytics.SORT_OPTIONS)
+              page: int = 1, discounts_only: bool = True) -> str:
+        shell = self._shell(conn, "/fakes", query, category, sort,
+                            analytics.SORT_OPTIONS, discounts_only, mode="fake")
         per = analytics.PAGE_SIZE
         result = analytics.fakes(
             conn, self.labels, limit=per, offset=(page - 1) * per,
@@ -138,8 +148,9 @@ class Dashboard:
         return webui.page("Зал ганьби", body, active="fake", **shell)
 
     def index(self, conn, query: str = "", category: str = "", sort: str = "",
-              page: int = 1) -> str:
-        shell = self._shell(conn, "/index", query, category, sort, analytics.SORT_OPTIONS)
+              page: int = 1, discounts_only: bool = True) -> str:
+        shell = self._shell(conn, "/index", query, category, sort,
+                            analytics.SORT_OPTIONS, discounts_only)
         data = analytics.category_index(conn, days=30)
         body = (
             '<section><h2>Індекс цін'
@@ -152,7 +163,8 @@ class Dashboard:
             result = analytics.top_discounts(
                 conn, self.labels, limit=analytics.PAGE_SIZE,
                 offset=(page - 1) * analytics.PAGE_SIZE,
-                query=query, category=category, sort=sort)
+                query=query, category=category, sort=sort,
+                discounts_only=discounts_only)
             found, total = result["rows"], result["total"]
             page = result["offset"] // analytics.PAGE_SIZE + 1
             inner = (
@@ -289,7 +301,11 @@ class Handler(BaseHTTPRequestHandler):
                 page = max(1, int((params.get("page") or ["1"])[0]))
             except ValueError:
                 page = 1
-            args = (query, category, sort, page)
+            # Свіжий захід (без f=1) — галочка стоїть. Форма надіслана без d —
+            # користувач її зняв.
+            submitted = "f" in params
+            discounts_only = (params.get("d", ["0"])[0] == "1") if submitted else True
+            args = (query, category, sort, page, discounts_only)
             if route in ("/", "/search"):
                 self._send(self.dashboard.home(conn, *args))
             elif route == "/cross-store":

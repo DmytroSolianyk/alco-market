@@ -39,15 +39,41 @@ def _rows(conn, sql: str, params: tuple = ()) -> list[dict]:
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def categories(conn) -> list[dict]:
-    """Категорії, які реально є в базі — для випадайки фільтра."""
-    return _rows(
-        conn,
-        "SELECT category_slug AS slug, MIN(category_title) AS title, "
-        "       MIN(group_key) AS group_key, COUNT(*) AS n "
-        "FROM products WHERE category_slug IS NOT NULL AND category_slug <> '' "
-        "GROUP BY category_slug ORDER BY group_key, title",
-    )
+def categories(conn, mode: str = "list", discounts_only: bool = True) -> list[dict]:
+    """Категорії для випадайки.
+
+    Число рахується ТИМ САМИМ фільтром, що й список на сторінці. Інакше
+    у випадайці «155», а в списку 45 — і це справедливо читається як брехня.
+    """
+    base = "category_slug IS NOT NULL AND category_slug <> '' AND stock > 0"
+
+    if mode == "gap":
+        sql = f"""
+            SELECT a.category_slug AS slug, MIN(a.category_title) AS title,
+                   MIN(a.group_key) AS group_key, COUNT(*) AS n
+            FROM products a JOIN products b
+              ON a.product_id = b.product_id AND a.branch_id < b.branch_id
+            WHERE a.price > 0 AND b.price > 0 AND ABS(a.price - b.price) > 0.01
+              AND a.stock > 0 AND b.stock > 0
+              AND a.category_slug IS NOT NULL AND a.category_slug <> ''
+            GROUP BY a.category_slug ORDER BY MIN(a.group_key), title
+        """
+    elif mode == "fake":
+        sql = f"""
+            SELECT category_slug AS slug, MIN(category_title) AS title,
+                   MIN(group_key) AS group_key, COUNT(DISTINCT product_id) AS n
+            FROM products WHERE {base} AND inflated = 1 AND confident = 1
+            GROUP BY category_slug ORDER BY group_key, title
+        """
+    else:
+        extra = " AND old_price > price" if discounts_only else ""
+        sql = f"""
+            SELECT category_slug AS slug, MIN(category_title) AS title,
+                   MIN(group_key) AS group_key, COUNT(DISTINCT product_id) AS n
+            FROM products WHERE {base}{extra}
+            GROUP BY category_slug ORDER BY group_key, title
+        """
+    return [row for row in _rows(conn, sql) if row["n"]]
 
 
 def branches(conn) -> list[dict]:
@@ -158,19 +184,19 @@ _PICK = {
 
 
 def top_discounts(conn, labels: dict[str, str], limit: int = PAGE_SIZE, offset: int = 0,
-                  query: str = "", category: str = "", sort: str = "") -> dict:
+                  query: str = "", category: str = "", sort: str = "",
+                  discounts_only: bool = True) -> dict:
     """Знижки з пагінацією.
 
     Порядок і згортання дублів робить SQL по збереженому score — тому
     вибірка більше не обмежена кількома десятками рядків.
     """
-    where, params = [], []
+    where, params = ["price > 0", "stock > 0"], []
     if query:
         where.append("ulower(title) LIKE ulower(?)")
         params.append(f"%{query}%")
-    else:
-        where.append("old_price > price AND stock > 0")
-    where.append("price > 0")
+    if discounts_only:
+        where.append("old_price > price")
     if category:
         where.append("category_slug = ?")
         params.append(category)

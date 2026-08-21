@@ -74,8 +74,10 @@ nav.tabs a.on{color:var(--ink);border-top-color:var(--accent);background:var(--a
 /* --- пошук --- */
 form.search{display:flex;flex-direction:column;position:sticky;top:0;z-index:5;
   background:var(--ground);padding:.5rem 0}
-form.search input{flex:1;min-width:0;background:var(--surface);color:var(--ink);
-  border:1px solid var(--rule);padding:0 .85rem;font-size:16px;
+/* Тільки поле в рядку пошуку — інакше правило ловить і чекбокс,
+   роздуваючи його до розміру кнопки. */
+form.search .search-row input{flex:1;min-width:0;background:var(--surface);
+  color:var(--ink);border:1px solid var(--rule);padding:0 .85rem;font-size:16px;
   font-family:var(--sans);min-height:var(--tap)}
 form.search .clear{display:flex;align-items:center;justify-content:center;
   min-width:var(--tap);min-height:var(--tap);background:var(--surface);
@@ -95,6 +97,11 @@ form.search button{background:var(--accent);color:#17150F;border:0;padding:0 1.1
     linear-gradient(135deg,var(--faint) 50%,transparent 50%);
   background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
   background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:1.9rem}
+
+.check{display:flex;align-items:center;gap:.5rem;min-height:var(--tap);
+  margin-top:.35rem;font-size:.85rem;color:var(--soft);cursor:pointer}
+.check input{width:20px;height:20px;min-height:0;flex:none;flex-shrink:0;
+  accent-color:var(--accent);margin:0}
 
 /* --- KPI --- */
 .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
@@ -245,7 +252,8 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
 
 
 def filter_bar(categories: list[dict], category_value: str,
-               sort_options: tuple, sort_value: str) -> str:
+               sort_options: tuple, sort_value: str,
+               discounts_only: bool = True, show_toggle: bool = True) -> str:
     """Дві нативні випадайки: на телефоні це системний пікер, а не самороб."""
     groups: dict[str, list[dict]] = {}
     for cat in categories:
@@ -267,10 +275,20 @@ def filter_bar(categories: list[dict], category_value: str,
         f'{e(label)}</option>'
         for value, label in sort_options
     )
+    # Прихований маркер: без нього знята галочка не відрізняється від
+    # свіжого заходу на сторінку, бо браузер не шле вимкнений чекбокс.
+    toggle = ""
+    if show_toggle:
+        checked = " checked" if discounts_only else ""
+        toggle = (
+            '<input type="hidden" name="f" value="1">'
+            f'<label class="check"><input type="checkbox" name="d" value="1"{checked}>'
+            "<span>Тільки зі знижкою</span></label>"
+        )
     return f"""<div class="filters">
 <label class="sel"><span>Категорія</span><select name="cat">{''.join(opts)}</select></label>
 <label class="sel"><span>Сортування</span><select name="sort">{sorts}</select></label>
-</div>"""
+</div>{toggle}"""
 
 
 def page(title: str, body: str, active: str = "",
