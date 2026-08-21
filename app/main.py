@@ -98,10 +98,12 @@ def scan_catalog(cfg: Config, silpo: SilpoClient, state: State) -> dict[str, lis
             candidate = build_candidate(
                 state.conn, branch.branch_id, product, cfg.history_points, status
             )
+            state.save_verdict(branch.branch_id, product.product_id, candidate)
             if candidate.score < max(cfg.min_discount, 0.5):
                 continue
             candidates.append(candidate)
 
+        state.commit()
         candidates.sort(key=lambda c: c.sort_key)
         result[branch.branch_id] = candidates
 

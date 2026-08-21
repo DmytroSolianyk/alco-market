@@ -58,62 +58,75 @@ class Dashboard:
             "carry": self._carry(query, category, sort),
         }
 
-    def home(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
-        """Вкладка «Знижки» — і нічого крім знижок.
-
-        Раніше сюди були зшиті прев'ю трьох інших вкладок, через що сторінка
-        читалась як лендінг, а вкладки не означали нічого конкретного.
-        """
+    def home(self, conn, query: str = "", category: str = "", sort: str = "",
+             page: int = 1) -> str:
+        """Вкладка «Знижки» — і нічого крім знижок."""
         shell = self._shell(conn, "/", query, category, sort, analytics.SORT_OPTIONS)
-        found = analytics.top_discounts(
-            conn, self.labels, limit=60, query=query, category=category, sort=sort)
+        per = analytics.PAGE_SIZE
+        result = analytics.top_discounts(
+            conn, self.labels, limit=per, offset=(page - 1) * per,
+            query=query, category=category, sort=sort)
+        found, total = result["rows"], result["total"]
+        page = result["offset"] // per + 1
 
-        hint = f'{len(found)}{"+" if len(found) >= 60 else ""} товарів'
+        hint = f'{total} {webui.plural(total, "товар", "товари", "товарів")}'
         if query:
             hint += f' за «{webui.e(query)}»'
         if sort == "drop":
             hint += " · подешевшали з минулого замі́ру"
 
         if found:
-            inner = f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
+            inner = (f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
+                     + webui.pager(page, total, per, "/", shell["carry"]))
         elif sort == "drop":
-            inner = webui.empty(
-                "Поки нічого не подешевшало",
-                "Порівнюємо з попереднім замі́ром — наступний о 09:00.")
+            inner = webui.empty("Поки нічого не подешевшало",
+                                "Порівнюємо з попереднім замі́ром — наступний о 09:00.")
         else:
-            inner = webui.empty(
-                "Нічого не знайшлось",
-                "Спробуй коротше слово або зніми фільтр категорії.")
+            inner = webui.empty("Нічого не знайшлось",
+                                "Спробуй коротше слово або зніми фільтр категорії.")
 
-        body = (
-            webui.kpis(analytics.overview(conn, self.labels))
-            + f'<section><h2>Знижки<span class="hint">{hint}</span></h2>{inner}</section>'
-        )
+        body = (webui.kpis(analytics.overview(conn, self.labels))
+                + f'<section><h2>Знижки<span class="hint">{hint}</span></h2>{inner}</section>')
         return webui.page("Знижки", body, active="home", **shell)
 
-    def cross_store(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
+    def cross_store(self, conn, query: str = "", category: str = "", sort: str = "",
+                    page: int = 1) -> str:
         shell = self._shell(conn, "/cross-store", query, category, sort,
                             analytics.GAP_SORT_OPTIONS)
-        gaps = analytics.cross_store(conn, self.labels, limit=100,
-                                     query=query, category=category, sort=sort)
-        hint = f'{len(gaps)}{"+" if len(gaps) >= 100 else ""} товарів'
+        per = analytics.PAGE_SIZE
+        result = analytics.cross_store(
+            conn, self.labels, limit=per, offset=(page - 1) * per,
+            query=query, category=category, sort=sort)
+        gaps, total = result["rows"], result["total"]
+        page = result["offset"] // per + 1
+
+        hint = f'{total} {webui.plural(total, "товар", "товари", "товарів")}'
         if query:
-            hint += f" за «{webui.e(query)}»"
+            hint += f' за «{webui.e(query)}»'
         note = ('<p class="lead">Той самий товар коштує по-різному в двох магазинах.</p>'
                 if not (query or category) else "")
-        inner = webui.gap_list(gaps) if gaps else webui.empty(
-            "Нічого не знайшлось",
-            "Або товару немає в обох магазинах, або він коштує там однаково.")
+        inner = (webui.gap_list(gaps) + webui.pager(page, total, per, "/cross-store",
+                                                    shell["carry"])
+                 if gaps else webui.empty(
+                     "Нічого не знайшлось",
+                     "Або товару немає в обох магазинах, або він коштує там однаково."))
         body = f'<section><h2>Де дешевше<span class="hint">{hint}</span></h2>{note}{inner}</section>'
         return webui.page("Де дешевше", body, active="gap", **shell)
 
-    def fakes(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
+    def fakes(self, conn, query: str = "", category: str = "", sort: str = "",
+              page: int = 1) -> str:
         shell = self._shell(conn, "/fakes", query, category, sort, analytics.SORT_OPTIONS)
-        caught = analytics.fakes(conn, self.labels, limit=60,
-                                 query=query, category=category, sort=sort)
+        per = analytics.PAGE_SIZE
+        result = analytics.fakes(
+            conn, self.labels, limit=per, offset=(page - 1) * per,
+            query=query, category=category, sort=sort)
+        caught, total = result["rows"], result["total"]
+        page = result["offset"] // per + 1
+
         if caught:
-            inner = f'<div class="cards">{"".join(webui.product_card(r) for r in caught)}</div>'
-            hint = f'{len(caught)}{"+" if len(caught) >= 60 else ""} товарів'
+            inner = (f'<div class="cards">{"".join(webui.product_card(r) for r in caught)}</div>'
+                     + webui.pager(page, total, per, "/fakes", shell["carry"]))
+            hint = f'{total} {webui.plural(total, "товар", "товари", "товарів")}'
         else:
             days = analytics.overview(conn, self.labels)["history_days"]
             inner = webui.empty(
@@ -124,7 +137,8 @@ class Dashboard:
         body = f'<section><h2>Зал ганьби<span class="hint">{hint}</span></h2>{inner}</section>'
         return webui.page("Зал ганьби", body, active="fake", **shell)
 
-    def index(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
+    def index(self, conn, query: str = "", category: str = "", sort: str = "",
+              page: int = 1) -> str:
         shell = self._shell(conn, "/index", query, category, sort, analytics.SORT_OPTIONS)
         data = analytics.category_index(conn, days=30)
         body = (
@@ -135,13 +149,19 @@ class Dashboard:
             + webui.index_chart(data) + "</section>"
         )
         if query or category:
-            found = analytics.top_discounts(conn, self.labels, limit=60,
-                                            query=query, category=category, sort=sort)
+            result = analytics.top_discounts(
+                conn, self.labels, limit=analytics.PAGE_SIZE,
+                offset=(page - 1) * analytics.PAGE_SIZE,
+                query=query, category=category, sort=sort)
+            found, total = result["rows"], result["total"]
+            page = result["offset"] // analytics.PAGE_SIZE + 1
             inner = (
                 f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
+                + webui.pager(page, total, analytics.PAGE_SIZE, "/index", shell["carry"])
                 if found else webui.empty("Нічого не знайшлось", "Спробуй інший запит.")
             )
-            body += (f'<section><h2>Знайдено<span class="hint">{len(found)} товарів</span>'
+            body += (f'<section><h2>Знайдено<span class="hint">{total} '
+                     f'{webui.plural(total, "товар", "товари", "товарів")}</span>'
                      f'</h2>{inner}</section>')
         return webui.page("Індекс цін", body, active="index", **shell)
 
@@ -265,7 +285,11 @@ class Handler(BaseHTTPRequestHandler):
             query = (params.get("q") or [""])[0].strip()
             category = (params.get("cat") or [""])[0].strip()
             sort = (params.get("sort") or [""])[0].strip()
-            args = (query, category, sort)
+            try:
+                page = max(1, int((params.get("page") or ["1"])[0]))
+            except ValueError:
+                page = 1
+            args = (query, category, sort, page)
             if route in ("/", "/search"):
                 self._send(self.dashboard.home(conn, *args))
             elif route == "/cross-store":

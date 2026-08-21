@@ -10,6 +10,41 @@ from datetime import datetime, timedelta, timezone
 from . import history
 
 
+# Вердикт про накрутку рахуємо раз на добу під час обходу і кладемо сюди.
+# Раніше він рахувався на кожен рядок під час рендеру — саме через це
+# списки доводилось обрізати до кількох десятків позицій.
+VERDICT_COLUMNS = {
+    "claimed": "REAL",
+    "regular_price": "REAL",
+    "honest": "REAL",
+    "inflated": "INTEGER",
+    "confident": "INTEGER",
+    "observed_days": "INTEGER",
+    "score": "REAL",
+    "day_drop": "REAL",
+}
+
+
+def migrate(conn) -> None:
+    have = {row[1] for row in conn.execute("PRAGMA table_info(products)")}
+    added = [name for name in VERDICT_COLUMNS if name not in have]
+    for name in added:
+        conn.execute(f"ALTER TABLE products ADD COLUMN {name} {VERDICT_COLUMNS[name]}")
+    if added:
+        # До першого обходу заповнюємо заявленою знижкою, щоб сортування
+        # працювало одразу, а не після наступного замі́ру.
+        conn.execute(
+            "UPDATE products SET claimed = CASE WHEN old_price > price AND old_price > 0 "
+            "THEN (old_price - price) / old_price * 100 ELSE 0 END, "
+            "score = CASE WHEN old_price > price AND old_price > 0 "
+            "THEN (old_price - price) / old_price * 100 ELSE 0 END, "
+            "confident = 0, inflated = 0, observed_days = 0, day_drop = 0"
+        )
+        conn.commit()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_products_score ON products(score)")
+    conn.commit()
+
+
 def register_functions(conn) -> None:
     """SQLite LIKE регістронезалежний лише для ASCII, тож «віскі» не знайшов би
     «Віскі Kamiki». Даємо йому Python-ський casefold."""
@@ -83,6 +118,7 @@ class State:
             cur.executescript(SCHEMA)
         self.conn.commit()
         history.init(self.conn)
+        migrate(self.conn)
         register_functions(self.conn)
 
     def close(self) -> None:
@@ -182,6 +218,28 @@ class State:
                 product.category_title, product.group_key, product.display_ratio,
                 product.display_price, product.price, product.old_price, product.stock,
                 int(product.online_only), product.rating, product.rating_count, now, now,
+            ),
+        )
+
+    def save_verdict(self, branch_id: str, product_id: str, candidate) -> None:
+        """Кладе порахований вердикт поруч із товаром."""
+        verdict = candidate.verdict
+        self.conn.execute(
+            "UPDATE products SET claimed = ?, regular_price = ?, honest = ?, "
+            "inflated = ?, confident = ?, observed_days = ?, score = ?, day_drop = ? "
+            "WHERE branch_id = ? AND product_id = ?",
+            (
+                round(verdict.claimed_discount, 2) if verdict else 0.0,
+                verdict.regular_price if verdict else None,
+                round(verdict.honest_discount, 2)
+                if verdict and verdict.honest_discount is not None else None,
+                int(bool(verdict and verdict.inflated)),
+                int(bool(verdict and verdict.confident)),
+                int(verdict.observed_days) if verdict else 0,
+                round(candidate.score, 2),
+                round(candidate.day_drop, 2),
+                branch_id,
+                product_id,
             ),
         )
 

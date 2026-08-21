@@ -5,7 +5,7 @@ from datetime import datetime
 from html import escape as e
 from urllib.parse import quote_plus
 
-from .formatting import money
+from .formatting import money, plural
 
 GROUP_TITLES = {
     "strong": "Міцний алкоголь",
@@ -175,6 +175,16 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 .gap-row.win .store{color:var(--good);font-weight:600}
 .gap-row .price{font-family:var(--mono);font-variant-numeric:tabular-nums;
   font-weight:600;white-space:nowrap}
+
+.pager{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  margin-top:.9rem}
+.pg{display:flex;align-items:center;justify-content:center;min-height:var(--tap);
+  padding:0 1rem;background:var(--surface);border:1px solid var(--rule);
+  font-size:.85rem;font-weight:600}
+.pg.off{color:var(--faint);opacity:.45}
+.pg.count{font-family:var(--mono);font-weight:400;color:var(--faint);
+  background:transparent;border:0;padding:0}
+.pg:not(.off):active{background:var(--accent);color:#17150F}
 
 .empty{background:var(--surface);border:1px dashed var(--rule);padding:1.1rem;
   color:var(--faint);font-size:.87rem;display:flex;flex-direction:column;gap:.4rem}
@@ -410,6 +420,27 @@ def gap_list(gaps: list[dict]) -> str:
     if not gaps:
         return empty("Немає з чим порівнювати", "Потрібні дані з обох магазинів.")
     return f'<div class="gaps">{"".join(gap_card(g) for g in gaps)}</div>'
+
+
+def pager(page: int, total: int, per_page: int, base: str, carry: str) -> str:
+    """Сторінкова навігація. Без неї до 94% каталогу просто не дістатись."""
+    pages = max(1, -(-total // per_page))
+    if pages <= 1:
+        return ""
+
+    def link(target: int, label: str, disabled: bool) -> str:
+        if disabled:
+            return f'<span class="pg off">{label}</span>'
+        parts = [p for p in (carry, f"page={target}") if p]
+        return f'<a class="pg" href="{base}?{"&".join(parts)}">{label}</a>'
+
+    return (
+        '<nav class="pager">'
+        + link(page - 1, "← Назад", page <= 1)
+        + f'<span class="pg count">{page} / {pages}</span>'
+        + link(page + 1, "Далі →", page >= pages)
+        + "</nav>"
+    )
 
 
 def empty(title: str, note: str) -> str:

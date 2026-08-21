@@ -115,86 +115,98 @@ def _decorate(conn, row: dict) -> dict:
     return row
 
 
-def top_discounts(conn, labels: dict[str, str], limit: int = 10,
-                  branch_id: str | None = None, query: str = "",
-                  category: str = "", sort: str = "") -> list[dict]:
-    """Найглибші знижки. Ранжуємо за реальною, коли історія дозволяє.
+PAGE_SIZE = 48
 
-    З пошуковим запитом фільтр «лише зі знижкою» знімається: якщо людина
-    шукає конкретну пляшку, вона хоче побачити її і без акції.
+
+def _clamp(offset: int, total: int, limit: int) -> int:
+    """Не даємо провалитись за останню сторінку — інакше ?page=999
+    віддає порожній список без жодного пояснення."""
+    if total <= 0:
+        return 0
+    return max(0, min(offset, ((total - 1) // limit) * limit))
+
+
+def _attach_stores(conn, rows: list[dict], labels: dict[str, str]) -> list[dict]:
+    """Дописує до кожного товару перелік магазинів, де він є."""
+    if not rows:
+        return rows
+    ids = {r["product_id"] for r in rows}
+    marks = ",".join("?" * len(ids))
+    stores: dict[str, list[str]] = {}
+    for row in conn.execute(
+        f"SELECT product_id, branch_id FROM products WHERE product_id IN ({marks})",
+        tuple(ids),
+    ):
+        stores.setdefault(row["product_id"], []).append(
+            labels.get(row["branch_id"], "")
+        )
+    for row in rows:
+        found = [s for s in stores.get(row["product_id"], []) if s]
+        row["branch_labels"] = found
+        row["branch_label"] = labels.get(row["branch_id"], "")
+    return rows
+
+
+# Як згортати дублі одного товару з двох магазинів і як його впорядкувати.
+_PICK = {
+    "":          ("MAX(score)",    "_pick DESC, price ASC"),
+    "drop":      ("MAX(day_drop)", "_pick DESC, price ASC"),
+    "price_asc": ("MIN(price)",    "_pick ASC, title ASC"),
+    "price_desc":("MAX(price)",    "_pick DESC, title ASC"),
+    "name":      ("MIN(price)",    "title ASC"),
+}
+
+
+def top_discounts(conn, labels: dict[str, str], limit: int = PAGE_SIZE, offset: int = 0,
+                  query: str = "", category: str = "", sort: str = "") -> dict:
+    """Знижки з пагінацією.
+
+    Порядок і згортання дублів робить SQL по збереженому score — тому
+    вибірка більше не обмежена кількома десятками рядків.
     """
-    params: list = []
+    where, params = [], []
     if query:
-        sql = "SELECT * FROM products WHERE price > 0 AND ulower(title) LIKE ulower(?)"
+        where.append("ulower(title) LIKE ulower(?)")
         params.append(f"%{query}%")
     else:
-        sql = "SELECT * FROM products WHERE old_price > price AND price > 0 AND stock > 0"
+        where.append("old_price > price AND stock > 0")
+    where.append("price > 0")
     if category:
-        sql += " AND category_slug = ?"
+        where.append("category_slug = ?")
         params.append(category)
-    if branch_id:
-        sql += " AND branch_id = ?"
-        params.append(branch_id)
-    # Беремо із запасом: остаточний порядок задає реальна знижка, а не заявлена.
-    # З явним сортуванням беремо ширшу вибірку, інакше "спочатку дешевші"
-    # покаже дешеве лише серед найглибших знижок.
-    sql += (" ORDER BY price ASC LIMIT ?" if sort == "price_asc"
-            else " ORDER BY price DESC LIMIT ?" if sort == "price_desc"
-            else " ORDER BY title LIMIT ?" if sort == "name"
-            else " ORDER BY (old_price - price) / old_price DESC LIMIT ?")
-    rows = _rows(conn, sql, tuple(params) + (limit * 6,))
-
-    decorated = [_decorate(conn, r) for r in rows]
-    decorated.sort(key=lambda r: (-r["score"], r["price"]))
-
-    # Той самий товар є в обох магазинах — у топі він має бути один раз,
-    # інакше десятка наполовину складається з дублів.
-    best: dict[str, dict] = {}
-    for row in decorated:
-        row["branch_label"] = labels.get(row["branch_id"], "")
-        keep = best.get(row["product_id"])
-        if keep is None:
-            row["branch_labels"] = [row["branch_label"]]
-            best[row["product_id"]] = row
-        elif row["branch_label"] not in keep["branch_labels"]:
-            keep["branch_labels"].append(row["branch_label"])
-
     if sort == "drop":
-        # Падіння відносно НАШОЇ попередньої ціни знає лише history.
-        for row in best.values():
-            previous = history.previous_price(conn, row["branch_id"], row["product_id"])
-            row["day_drop"] = (
-                (previous - row["price"]) / previous * 100
-                if previous and previous > row["price"] else 0.0
-            )
-        rows_out = [r for r in best.values() if r["day_drop"] > 0]
-        return _sort_products(rows_out, sort)[:limit]
-    return _sort_products(list(best.values()), sort)[:limit]
+        where.append("day_drop > 0")
+    clause = " AND ".join(where)
 
+    total = conn.execute(
+        f"SELECT COUNT(DISTINCT product_id) AS n FROM products WHERE {clause}",
+        tuple(params),
+    ).fetchone()["n"]
 
-def cross_store(conn, labels: dict[str, str], limit: int = 20,
-                query: str = "", category: str = "", sort: str = "") -> list[dict]:
-    """Той самий товар, різна ціна в двох магазинах."""
-    where, extra = "", []
-    if query:
-        where += " AND ulower(a.title) LIKE ulower(?)"
-        extra.append(f"%{query}%")
-    if category:
-        where += " AND a.category_slug = ?"
-        extra.append(category)
-    params = tuple(extra) + (limit,)
-    order = {
-        "gap_uah": "ABS(a.price - b.price) DESC",
-        "price_asc": "MIN(a.price, b.price) ASC",
-        "price_desc": "MIN(a.price, b.price) DESC",
-    }.get(sort, "ABS(a.price - b.price) / MIN(a.price, b.price) DESC")
+    offset = _clamp(offset, total, limit)
+    pick, order = _PICK.get(sort, _PICK[""])
     rows = _rows(
         conn,
-        f"""
-        SELECT a.product_id, a.title, a.image, a.slug, a.url, a.display_ratio,
-               a.category_title,
-               a.branch_id AS b1, a.price AS p1, a.stock AS s1,
-               b.branch_id AS b2, b.price AS p2, b.stock AS s2
+        f"SELECT *, {pick} AS _pick FROM products WHERE {clause} "
+        f"GROUP BY product_id ORDER BY {order} LIMIT ? OFFSET ?",
+        tuple(params) + (limit, offset),
+    )
+    return {"rows": _attach_stores(conn, rows, labels), "total": total, "offset": offset}
+
+
+def cross_store(conn, labels: dict[str, str], limit: int = PAGE_SIZE, offset: int = 0,
+                query: str = "", category: str = "", sort: str = "") -> dict:
+    """Той самий товар, різна ціна в двох магазинах."""
+    where, params = [], []
+    if query:
+        where.append("AND ulower(a.title) LIKE ulower(?)")
+        params.append(f"%{query}%")
+    if category:
+        where.append("AND a.category_slug = ?")
+        params.append(category)
+    extra = " ".join(where)
+
+    base = f"""
         FROM products a
         JOIN products b
           ON a.product_id = b.product_id
@@ -202,11 +214,25 @@ def cross_store(conn, labels: dict[str, str], limit: int = 20,
         WHERE a.price > 0 AND b.price > 0
           AND ABS(a.price - b.price) > 0.01
           AND a.stock > 0 AND b.stock > 0
-          {where}
-        ORDER BY {order}
-        LIMIT ?
-        """,
-        params,
+          {extra}
+    """
+    total = conn.execute(f"SELECT COUNT(*) AS n {base}", tuple(params)).fetchone()["n"]
+
+    offset = _clamp(offset, total, limit)
+    order = {
+        "gap_uah": "ABS(a.price - b.price) DESC",
+        "price_asc": "MIN(a.price, b.price) ASC",
+        "price_desc": "MIN(a.price, b.price) DESC",
+    }.get(sort, "ABS(a.price - b.price) / MIN(a.price, b.price) DESC")
+
+    rows = _rows(
+        conn,
+        f"""SELECT a.product_id, a.title, a.image, a.slug, a.url, a.display_ratio,
+                   a.category_title,
+                   a.branch_id AS b1, a.price AS p1, a.stock AS s1,
+                   b.branch_id AS b2, b.price AS p2, b.stock AS s2
+            {base} ORDER BY {order} LIMIT ? OFFSET ?""",
+        tuple(params) + (limit, offset),
     )
     for row in rows:
         cheap_first = row["p1"] <= row["p2"]
@@ -216,64 +242,45 @@ def cross_store(conn, labels: dict[str, str], limit: int = 20,
         row["dear_price"] = max(row["p1"], row["p2"])
         row["gap"] = round(row["dear_price"] - row["cheap_price"], 2)
         # Від ДОРОЖЧОЇ ціни: «економія 48%» — це те, скільки не віддаси,
-        # якщо купиш у дешевшому магазині. Від дешевшої вийшло б 92%,
-        # що читається як «знижка 92%» і вводить в оману.
+        # якщо купиш у дешевшому магазині.
         row["gap_percent"] = round(row["gap"] / row["dear_price"] * 100, 1)
-    return rows
+    return {"rows": rows, "total": total, "offset": offset}
 
 
-def fakes(conn, labels: dict[str, str], limit: int = 20, query: str = "",
-          category: str = "", sort: str = "") -> list[dict]:
-    """Товари, де перекреслену ціну підняли перед акцією."""
-    where, extra = "", []
+def fakes(conn, labels: dict[str, str], limit: int = PAGE_SIZE, offset: int = 0,
+          query: str = "", category: str = "", sort: str = "") -> dict:
+    """Товари, де перекреслену ціну підняли перед акцією.
+
+    Фільтр тепер у SQL, а не перебором чотирьохсот найглибших знижок —
+    тож накрутка на дрібній знижці більше не випадає з поля зору.
+    """
+    where = ["inflated = 1", "confident = 1", "price > 0"]
+    params: list = []
     if query:
-        where += "AND ulower(title) LIKE ulower(?) "
-        extra.append(f"%{query}%")
+        where.append("ulower(title) LIKE ulower(?)")
+        params.append(f"%{query}%")
     if category:
-        where += "AND category_slug = ? "
-        extra.append(category)
-    params = tuple(extra)
+        where.append("category_slug = ?")
+        params.append(category)
+    clause = " AND ".join(where)
+
+    total = conn.execute(
+        f"SELECT COUNT(DISTINCT product_id) AS n FROM products WHERE {clause}",
+        tuple(params),
+    ).fetchone()["n"]
+
+    offset = _clamp(offset, total, limit)
+    pick, order = _PICK.get(sort, ("MAX(claimed - COALESCE(honest, 0))",
+                                   "_pick DESC, price ASC"))
     rows = _rows(
         conn,
-        "SELECT * FROM products WHERE old_price > price AND price > 0 "
-        f"{where}ORDER BY (old_price - price) / old_price DESC LIMIT 400",
-        params,
+        f"SELECT *, {pick} AS _pick FROM products WHERE {clause} "
+        f"GROUP BY product_id ORDER BY {order} LIMIT ? OFFSET ?",
+        tuple(params) + (limit, offset),
     )
-    caught = []
     for row in rows:
-        decorated = _decorate(conn, row)
-        if decorated["inflated"] and decorated["confident"]:
-            decorated["branch_label"] = labels.get(row["branch_id"], "")
-            decorated["overstated"] = round(
-                decorated["claimed"] - (decorated["honest"] or 0), 1
-            )
-            caught.append(decorated)
-    if sort:
-        caught = _sort_products(caught, sort)
-    else:
-        caught.sort(key=lambda r: -r["overstated"])
-    return caught[:limit]
-
-
-def movers(conn, labels: dict[str, str], limit: int = 10, direction: str = "up") -> list[dict]:
-    """Хто найбільше подорожчав або подешевшав відносно попередньої ціни."""
-    out = []
-    for row in _rows(conn, "SELECT * FROM products WHERE price > 0 AND stock > 0"):
-        previous = history.previous_price(conn, row["branch_id"], row["product_id"])
-        if not previous or previous <= 0:
-            continue
-        change = (row["price"] - previous) / previous * 100
-        if direction == "up" and change <= 0.5:
-            continue
-        if direction == "down" and change >= -0.5:
-            continue
-        decorated = _decorate(conn, row)
-        decorated["previous_price"] = previous
-        decorated["change"] = round(change, 1)
-        decorated["branch_label"] = labels.get(row["branch_id"], "")
-        out.append(decorated)
-    out.sort(key=lambda r: -abs(r["change"]))
-    return out[:limit]
+        row["overstated"] = round((row["claimed"] or 0) - (row["honest"] or 0), 1)
+    return {"rows": _attach_stores(conn, rows, labels), "total": total, "offset": offset}
 
 
 def _price_on(rows: list[dict], moment: datetime) -> float | None:
@@ -336,20 +343,6 @@ def category_index(conn, days: int = 30) -> dict:
             )
         series[key] = points
     return {"labels": [s.date().isoformat() for s in stamps], "series": series}
-
-
-def search(conn, query: str, labels: dict[str, str], limit: int = 40) -> list[dict]:
-    rows = _rows(
-        conn,
-        "SELECT * FROM products WHERE ulower(title) LIKE ulower(?) ORDER BY title LIMIT ?",
-        (f"%{query}%", limit),
-    )
-    out = []
-    for row in rows:
-        decorated = _decorate(conn, row)
-        decorated["branch_label"] = labels.get(row["branch_id"], "")
-        out.append(decorated)
-    return out
 
 
 def product_detail(conn, branch_id: str, product_id: str, labels: dict[str, str]) -> dict | None:
