@@ -1,0 +1,19 @@
+services:
+  silpo-alco-watch:
+    build: .
+    image: silpo-alco-watch:latest
+    container_name: silpo-alco-watch
+    restart: unless-stopped
+    env_file: .env
+    # Іменований том, а не bind-mount: контейнер працює під uid 10001, і
+    # bind-mount на неіснуючу теку Docker створив би від root — SQLite не відкрився б.
+    volumes:
+      - silpo-state:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  silpo-state:
