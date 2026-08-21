@@ -117,8 +117,11 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 /* --- картки товарів --- */
 .cards{display:flex;flex-direction:column;gap:1px;
   background:var(--rule);border:1px solid var(--rule)}
-.card{background:var(--surface);display:flex;flex-direction:column}
-.card-link{display:flex;gap:.75rem;align-items:flex-start;padding:.75rem .75rem .5rem}
+.card{background:var(--surface);display:flex;flex-direction:column;height:100%}
+/* flex:1 віддає зоні посилання весь зайвий простір, тож кнопка завжди
+   притиснута до низу картки й не стрибає від довжини назви. */
+.card-link{flex:1;display:flex;gap:.75rem;align-items:flex-start;
+  padding:.75rem .75rem .5rem}
 .card-link:active{background:var(--sunk)}
 .buy{display:flex;align-items:center;justify-content:center;gap:.4rem;
   margin:0 .75rem .75rem;min-height:40px;background:var(--accent-soft);
@@ -127,6 +130,7 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 @media (hover:hover){.buy:hover{background:var(--accent);color:#17150F}}
 .thumb{width:60px;height:60px;flex-shrink:0;object-fit:contain;background:var(--sunk)}
 .card-main{min-width:0;display:flex;flex-direction:column;gap:.3rem;flex:1}
+.card-meta:last-child{margin-top:auto;padding-top:.15rem}
 .card-title{font-size:.92rem;font-weight:600;line-height:1.3;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card-prices{font-family:var(--mono);font-variant-numeric:tabular-nums;
@@ -147,8 +151,10 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 /* --- порівняння магазинів: картка, а не таблиця --- */
 .gaps{display:flex;flex-direction:column;gap:1px;
   background:var(--rule);border:1px solid var(--rule)}
-.gap{background:var(--surface);display:flex;flex-direction:column}
-.gap-link{display:flex;flex-direction:column;gap:.5rem;padding:.75rem .75rem .5rem}
+.gap{background:var(--surface);display:flex;flex-direction:column;height:100%}
+.gap-link{flex:1;display:flex;flex-direction:column;gap:.5rem;
+  padding:.75rem .75rem .5rem}
+.gap-rows{margin-top:auto}
 .gap-link:active{background:var(--sunk)}
 .gap-head{display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start}
 .gap-title{font-size:.92rem;font-weight:600;line-height:1.3;min-width:0;
@@ -209,8 +215,12 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
   nav.tabs a.on{background:transparent;border-bottom-color:var(--accent)}
   form.search{position:static}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr))}
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(20rem,1fr))}
-  .gaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(22rem,1fr))}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(20rem,1fr));
+    align-items:stretch}
+  .card-title{min-height:2.6em}
+  .gap-title{min-height:2.6em}
+  .gaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(22rem,1fr));
+    align-items:stretch}
   h2{flex-direction:row;align-items:baseline;gap:.6rem}
   .detail{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:1.5rem}
   .hero img{width:120px;height:120px}
