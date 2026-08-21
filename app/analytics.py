@@ -9,6 +9,7 @@ from . import history
 
 SORT_OPTIONS = (
     ("", "За знижкою"),
+    ("drop", "Найбільше подешевшало"),
     ("price_asc", "Спочатку дешевші"),
     ("price_desc", "Спочатку дорожчі"),
     ("name", "За назвою"),
@@ -23,6 +24,8 @@ GAP_SORT_OPTIONS = (
 
 
 def _sort_products(rows: list[dict], sort: str) -> list[dict]:
+    if sort == "drop":
+        return sorted(rows, key=lambda r: -(r.get("day_drop") or 0))
     if sort == "price_asc":
         return sorted(rows, key=lambda r: (r["price"], r.get("title") or ""))
     if sort == "price_desc":
@@ -156,6 +159,16 @@ def top_discounts(conn, labels: dict[str, str], limit: int = 10,
         elif row["branch_label"] not in keep["branch_labels"]:
             keep["branch_labels"].append(row["branch_label"])
 
+    if sort == "drop":
+        # Падіння відносно НАШОЇ попередньої ціни знає лише history.
+        for row in best.values():
+            previous = history.previous_price(conn, row["branch_id"], row["product_id"])
+            row["day_drop"] = (
+                (previous - row["price"]) / previous * 100
+                if previous and previous > row["price"] else 0.0
+            )
+        rows_out = [r for r in best.values() if r["day_drop"] > 0]
+        return _sort_products(rows_out, sort)[:limit]
     return _sort_products(list(best.values()), sort)[:limit]
 
 

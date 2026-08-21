@@ -59,65 +59,37 @@ class Dashboard:
         }
 
     def home(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
+        """Вкладка «Знижки» — і нічого крім знижок.
+
+        Раніше сюди були зшиті прев'ю трьох інших вкладок, через що сторінка
+        читалась як лендінг, а вкладки не означали нічого конкретного.
+        """
         shell = self._shell(conn, "/", query, category, sort, analytics.SORT_OPTIONS)
-        narrowed = bool(query or category or sort)
         found = analytics.top_discounts(
-            conn, self.labels, limit=60 if narrowed else 10,
-            query=query, category=category, sort=sort)
+            conn, self.labels, limit=60, query=query, category=category, sort=sort)
 
-        if narrowed:
-            what = f'{len(found)}{"+" if len(found) >= 60 else ""} товарів'
-            if query:
-                what += f' за «{webui.e(query)}»'
-            inner = (
-                f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
-                if found else webui.empty(
-                    "Нічого не знайшлось",
-                    "Спробуй коротше слово або зніми фільтр категорії.")
-            )
-            body = f'<section><h2>Знайдено<span class="hint">{what}</span></h2>{inner}</section>'
-            return webui.page("Пошук", body, active="home", **shell)
+        hint = f'{len(found)}{"+" if len(found) >= 60 else ""} товарів'
+        if query:
+            hint += f' за «{webui.e(query)}»'
+        if sort == "drop":
+            hint += " · подешевшали з минулого замі́ру"
 
-        data = analytics.overview(conn, self.labels)
-        body = [webui.kpis(data)]
-        body.append(
-            '<section><h2>Топ-10 знижок'
-            '<span class="hint">за реальною знижкою, коли історії вистачає</span></h2>'
-            + (f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
-               if found else webui.empty("Знижок не знайдено", "Перший обхід ще не завершився."))
-            + "</section>"
-        )
-        gaps = analytics.cross_store(conn, self.labels, limit=6)
-        body.append(
-            '<section><h2>Де дешевше'
-            '<span class="hint">той самий товар, різні магазини</span></h2>'
-            + webui.gap_list(gaps)
-            + '<a class="more" href="/cross-store">Показати всі →</a></section>'
-        )
-        caught = analytics.fakes(conn, self.labels, limit=5)
-        if caught:
-            body.append(
-                '<section><h2>Зал ганьби<span class="hint">ціну підняли перед акцією</span></h2>'
-                + f'<div class="cards">{"".join(webui.product_card(r) for r in caught)}</div>'
-                + '<a class="more" href="/fakes">Показати всі →</a></section>'
-            )
+        if found:
+            inner = f'<div class="cards">{"".join(webui.product_card(r) for r in found)}</div>'
+        elif sort == "drop":
+            inner = webui.empty(
+                "Поки нічого не подешевшало",
+                "Порівнюємо з попереднім замі́ром — наступний о 09:00.")
         else:
-            body.append(
-                '<section><h2>Зал ганьби</h2>'
-                + webui.empty(
-                    "Поки нікого не спіймали",
-                    f"Щоб довести накрутку, потрібно бачити ціну до акції. "
-                    f"Історії зараз {data['history_days']} дн., перші вироки — "
-                    f"десь через два тижні.")
-                + "</section>"
-            )
-        down = analytics.movers(conn, self.labels, limit=6, direction="down")
-        if down:
-            body.append(
-                '<section><h2>Подешевшало з минулого замі́ру</h2>'
-                + f'<div class="cards">{"".join(webui.product_card(r) for r in down)}</div></section>'
-            )
-        return webui.page("Огляд", "".join(body), active="home", **shell)
+            inner = webui.empty(
+                "Нічого не знайшлось",
+                "Спробуй коротше слово або зніми фільтр категорії.")
+
+        body = (
+            webui.kpis(analytics.overview(conn, self.labels))
+            + f'<section><h2>Знижки<span class="hint">{hint}</span></h2>{inner}</section>'
+        )
+        return webui.page("Знижки", body, active="home", **shell)
 
     def cross_store(self, conn, query: str = "", category: str = "", sort: str = "") -> str:
         shell = self._shell(conn, "/cross-store", query, category, sort,
@@ -230,15 +202,12 @@ class Dashboard:
             "<span>Заявлена знижка більша за реальну.</span></div>"
             if item["inflated"] and item["confident"] else ""
         )
-        silpo = (
-            f'<div class="card-meta"><a href="{webui.e(item["url"])}" target="_blank" '
-            f'rel="noopener">Відкрити в Сільпо →</a></div>' if item.get("url") else ""
-        )
+        silpo = webui.buy_button(item.get("url"), "Купити в Сільпо")
 
         body = f"""<section>
 <div class="hero">{img}<div><h1>{webui.e(item["title"] or "")}</h1>
 <div class="card-meta" style="margin-top:.5rem">{webui._discount_pills(item)}</div>
-{silpo}</div></div>
+<div class="hero-buy">{silpo}</div></div></div>
 {warn}
 <div class="detail">
   <div>{webui.price_chart(item["series"])}</div>

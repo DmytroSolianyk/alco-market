@@ -47,24 +47,29 @@ html{-webkit-text-size-adjust:100%}
 body{background:var(--ground);color:var(--ink);font-family:var(--sans);
   font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
   overflow-x:hidden}
-.wrap{padding:.9rem .9rem calc(3rem + env(safe-area-inset-bottom));
+.wrap{padding:.9rem .9rem calc(5.5rem + env(safe-area-inset-bottom));
   display:flex;flex-direction:column;gap:1.4rem;max-width:1180px;margin:0 auto}
 a{color:inherit;text-decoration:none}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* --- шапка --- */
-header.top{display:flex;flex-direction:column;gap:.7rem;
-  border-bottom:2px solid var(--ink);padding-bottom:.6rem}
+header.top{border-bottom:2px solid var(--ink);padding-bottom:.6rem}
 .brand{font-size:1.3rem;font-weight:700;letter-spacing:-.02em;display:block}
 .brand span{color:var(--accent)}
 .updated{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:.1rem}
-nav{display:flex;gap:.4rem;overflow-x:auto;scrollbar-width:none;
-  margin:0 -.9rem;padding:0 .9rem}
-nav::-webkit-scrollbar{display:none}
-nav a{color:var(--soft);font-size:.85rem;white-space:nowrap;
-  padding:.5rem .75rem;background:var(--surface);border:1px solid var(--rule);
-  min-height:var(--tap);display:flex;align-items:center}
-nav a.on{background:var(--accent);border-color:var(--accent);color:#17150F;font-weight:600}
+
+/* Таб-бар прибитий донизу: чотири рівні колонки завжди вміщаються,
+   тож горизонтального скролу немає в принципі. */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;
+  display:grid;grid-template-columns:repeat(4,1fr);
+  background:var(--surface);border-top:1px solid var(--rule);
+  padding-bottom:env(safe-area-inset-bottom)}
+nav.tabs a{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.1rem;min-height:56px;padding:.35rem .2rem;color:var(--faint);
+  border-top:2px solid transparent}
+nav.tabs a b{font-size:.78rem;font-weight:600;line-height:1.15;text-align:center}
+nav.tabs a i{display:none}
+nav.tabs a.on{color:var(--ink);border-top-color:var(--accent);background:var(--accent-soft)}
 
 /* --- пошук --- */
 form.search{display:flex;flex-direction:column;position:sticky;top:0;z-index:5;
@@ -112,9 +117,14 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 /* --- картки товарів --- */
 .cards{display:flex;flex-direction:column;gap:1px;
   background:var(--rule);border:1px solid var(--rule)}
-.card{background:var(--surface);padding:.75rem;display:flex;gap:.75rem;
-  align-items:flex-start;min-height:var(--tap)}
-.card:active{background:var(--sunk)}
+.card{background:var(--surface);display:flex;flex-direction:column}
+.card-link{display:flex;gap:.75rem;align-items:flex-start;padding:.75rem .75rem .5rem}
+.card-link:active{background:var(--sunk)}
+.buy{display:flex;align-items:center;justify-content:center;gap:.4rem;
+  margin:0 .75rem .75rem;min-height:40px;background:var(--accent-soft);
+  color:var(--ink);font-size:.85rem;font-weight:600;border:1px solid var(--accent)}
+.buy:active{background:var(--accent);color:#17150F}
+@media (hover:hover){.buy:hover{background:var(--accent);color:#17150F}}
 .thumb{width:60px;height:60px;flex-shrink:0;object-fit:contain;background:var(--sunk)}
 .card-main{min-width:0;display:flex;flex-direction:column;gap:.3rem;flex:1}
 .card-title{font-size:.92rem;font-weight:600;line-height:1.3;
@@ -137,7 +147,9 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 /* --- порівняння магазинів: картка, а не таблиця --- */
 .gaps{display:flex;flex-direction:column;gap:1px;
   background:var(--rule);border:1px solid var(--rule)}
-.gap{background:var(--surface);padding:.75rem;display:flex;flex-direction:column;gap:.5rem}
+.gap{background:var(--surface);display:flex;flex-direction:column}
+.gap-link{display:flex;flex-direction:column;gap:.5rem;padding:.75rem .75rem .5rem}
+.gap-link:active{background:var(--sunk)}
 .gap-head{display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start}
 .gap-title{font-size:.92rem;font-weight:600;line-height:1.3;min-width:0;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -174,6 +186,8 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 .facts dt{color:var(--faint);flex-shrink:0}
 .facts dd{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
 .hero{display:flex;gap:.9rem;align-items:flex-start}
+.hero-buy{margin-top:.6rem}
+.hero-buy .buy{margin:0;padding:0 1rem}
 .hero img{width:88px;height:88px;flex-shrink:0;object-fit:contain;background:var(--sunk)}
 h1{font-size:1.25rem;letter-spacing:-.02em;line-height:1.25}
 footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono);
@@ -182,13 +196,17 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
 /* --- десктоп --- */
 @media (min-width:760px){
   .wrap{padding:1.5rem 1.2rem 4rem;gap:2rem}
-  header.top{flex-direction:row;flex-wrap:wrap;align-items:baseline;
-    justify-content:space-between;padding-bottom:.8rem}
-  nav{margin:0;padding:0;gap:.5rem}
-  nav a{background:transparent;border:0;border-bottom:2px solid transparent;
-    min-height:auto;padding:.2rem 0 .3rem}
-  nav a.on{background:transparent;color:var(--ink);border-bottom-color:var(--accent)}
-  nav a+a{margin-left:.9rem}
+  .wrap{padding-bottom:4rem}
+  header.top{display:flex;flex-wrap:wrap;align-items:baseline;
+    justify-content:space-between;padding-bottom:.8rem;border-bottom:0}
+  nav.tabs{position:static;display:flex;gap:1.4rem;background:transparent;
+    border-top:0;border-bottom:2px solid var(--ink);padding:0 0 .5rem}
+  nav.tabs a{flex-direction:column;align-items:flex-start;min-height:auto;
+    padding:.1rem 0 .35rem;border-top:0;border-bottom:2px solid transparent}
+  nav.tabs a b{font-size:.95rem;text-align:left}
+  nav.tabs a i{display:block;font-style:normal;font-size:.7rem;
+    font-family:var(--mono);color:var(--faint)}
+  nav.tabs a.on{background:transparent;border-bottom-color:var(--accent)}
   form.search{position:static}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr))}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(20rem,1fr))}
@@ -238,12 +256,13 @@ def page(title: str, body: str, active: str = "",
     # скидати те, що людина шукає.
     tail = f"?{carry}" if carry else ""
     nav = "".join(
-        f'<a href="{href}{tail}" class="{"on" if key == active else ""}">{label}</a>'
-        for key, href, label in (
-            ("home", "/", "Огляд"),
-            ("gap", "/cross-store", "Де дешевше"),
-            ("fake", "/fakes", "Зал ганьби"),
-            ("index", "/index", "Індекс цін"),
+        f'<a href="{href}{tail}" class="{"on" if key == active else ""}">'
+        f'<b>{label}</b><i>{sub}</i></a>'
+        for key, href, label, sub in (
+            ("home", "/", "Знижки", "топ за реальною"),
+            ("gap", "/cross-store", "Де дешевше", "різниця магазинів"),
+            ("fake", "/fakes", "Ганьба", "накрутки"),
+            ("index", "/index", "Індекс", "динаміка цін"),
         )
     )
     clear = (
@@ -258,10 +277,10 @@ def page(title: str, body: str, active: str = "",
 <title>{e(title)} · alco-market</title><style>{CSS}</style></head><body>
 <div class="wrap">
 <header class="top">
-  <div><a href="/" class="brand">alco<span>·</span>market</a>
-    <div class="updated">Сільпо: Білогородка та Стоянка</div></div>
-  <nav>{nav}</nav>
+  <a href="/" class="brand">alco<span>·</span>market</a>
+  <div class="updated">Сільпо: Білогородка та Стоянка</div>
 </header>
+<nav class="tabs">{nav}</nav>
 <form class="search" action="{search_action}" method="get">
   <div class="search-row">
   <input name="q" value="{e(search_value)}" enterkeyhint="search"
@@ -307,6 +326,16 @@ def _discount_pills(row: dict) -> str:
     return "".join(pills)
 
 
+def buy_button(url: str | None, label: str = "Купити") -> str:
+    """Веде на картку товару в Сільпо — замовлення оформлюється там."""
+    if not url:
+        return ""
+    return (
+        f'<a class="buy" href="{e(url)}" target="_blank" rel="noopener noreferrer">'
+        f'<span aria-hidden="true">🛒</span>{e(label)}</a>'
+    )
+
+
 def product_card(row: dict) -> str:
     href = f'/product?b={e(row["branch_id"])}&p={e(row["product_id"])}'
     img = (
@@ -322,7 +351,8 @@ def product_card(row: dict) -> str:
         for label in (row.get("branch_labels") or [row.get("branch_label", "")])
         if label
     )
-    return f"""<a class="card" href="{href}">{img}
+    return f"""<article class="card">
+<a class="card-link" href="{href}">{img}
 <div class="card-main">
   <div class="card-title">{e(row["title"] or "")}</div>
   <div class="card-prices"><span class="now">{money(row["price"])} ₴</span>{was}</div>
@@ -330,7 +360,8 @@ def product_card(row: dict) -> str:
   <div class="card-meta">{stores}
     <span>{e(row.get("display_ratio") or "")}</span>
     <span>{e(row.get("category_title") or "")}</span></div>
-</div></a>"""
+</div></a>
+{buy_button(row.get("url"))}</article>"""
 
 
 def gap_card(g: dict) -> str:
@@ -350,13 +381,15 @@ def gap_card(g: dict) -> str:
             (g["dearer_branch"], g["dear_price"], False),
         )
     )
-    return f"""<a class="gap" href="{href}">
+    return f"""<article class="gap">
+<a class="gap-link" href="{href}">
 <div class="gap-head">
   {img}
   <div class="gap-title">{e(g["title"] or "")}</div>
   <div class="gap-save">−{money(g["gap"])} ₴<small>економія {g["gap_percent"]:.0f}%</small></div>
 </div>
-<div class="gap-rows">{rows}</div></a>"""
+<div class="gap-rows">{rows}</div></a>
+{buy_button(g.get("url"))}</article>"""
 
 
 def gap_list(gaps: list[dict]) -> str:
