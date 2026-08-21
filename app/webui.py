@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape as e
+from urllib.parse import quote_plus
 
 from .formatting import money
 
@@ -66,13 +67,29 @@ nav a{color:var(--soft);font-size:.85rem;white-space:nowrap;
 nav a.on{background:var(--accent);border-color:var(--accent);color:#17150F;font-weight:600}
 
 /* --- пошук --- */
-form.search{display:flex;gap:.5rem;position:sticky;top:0;z-index:5;
+form.search{display:flex;flex-direction:column;position:sticky;top:0;z-index:5;
   background:var(--ground);padding:.5rem 0}
 form.search input{flex:1;min-width:0;background:var(--surface);color:var(--ink);
   border:1px solid var(--rule);padding:0 .85rem;font-size:16px;
   font-family:var(--sans);min-height:var(--tap)}
+form.search .clear{display:flex;align-items:center;justify-content:center;
+  min-width:var(--tap);min-height:var(--tap);background:var(--surface);
+  border:1px solid var(--rule);color:var(--faint);font-size:1.1rem}
 form.search button{background:var(--accent);color:#17150F;border:0;padding:0 1.1rem;
   font-weight:600;font-size:.9rem;min-height:var(--tap);cursor:pointer}
+
+/* --- фільтри --- */
+.search-row{display:flex;gap:.5rem}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.5rem}
+.sel{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.sel span{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.sel select{width:100%;min-height:var(--tap);background:var(--surface);color:var(--ink);
+  border:1px solid var(--rule);padding:0 .6rem;font-size:16px;font-family:var(--sans);
+  appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),
+    linear-gradient(135deg,var(--faint) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:1.9rem}
 
 /* --- KPI --- */
 .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
@@ -185,15 +202,53 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
 """
 
 
-def page(title: str, body: str, active: str = "") -> str:
+def filter_bar(categories: list[dict], category_value: str,
+               sort_options: tuple, sort_value: str) -> str:
+    """Дві нативні випадайки: на телефоні це системний пікер, а не самороб."""
+    groups: dict[str, list[dict]] = {}
+    for cat in categories:
+        groups.setdefault(cat["group_key"] or "", []).append(cat)
+
+    opts = ['<option value="">Усі категорії</option>']
+    for key, items in groups.items():
+        opts.append(f'<optgroup label="{e(GROUP_TITLES.get(key, key))}">')
+        for cat in items:
+            sel = " selected" if cat["slug"] == category_value else ""
+            opts.append(
+                f'<option value="{e(cat["slug"])}"{sel}>'
+                f'{e(cat["title"] or cat["slug"])} ({cat["n"]})</option>'
+            )
+        opts.append("</optgroup>")
+
+    sorts = "".join(
+        f'<option value="{e(value)}"{" selected" if value == sort_value else ""}>'
+        f'{e(label)}</option>'
+        for value, label in sort_options
+    )
+    return f"""<div class="filters">
+<label class="sel"><span>Категорія</span><select name="cat">{''.join(opts)}</select></label>
+<label class="sel"><span>Сортування</span><select name="sort">{sorts}</select></label>
+</div>"""
+
+
+def page(title: str, body: str, active: str = "",
+         search_action: str = "/", search_value: str = "",
+         filters: str = "", carry: str = "") -> str:
+    # Запит тягнемо за собою по вкладках: перемикання формату не має
+    # скидати те, що людина шукає.
+    tail = f"?{carry}" if carry else ""
     nav = "".join(
-        f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>'
+        f'<a href="{href}{tail}" class="{"on" if key == active else ""}">{label}</a>'
         for key, href, label in (
             ("home", "/", "Огляд"),
             ("gap", "/cross-store", "Де дешевше"),
             ("fake", "/fakes", "Зал ганьби"),
             ("index", "/index", "Індекс цін"),
         )
+    )
+    clear = (
+        f'<a class="clear" href="{search_action}" title="Скинути пошук">✕</a>'
+        if search_value else ""
     )
     stamp = datetime.now().strftime("%d.%m.%Y %H:%M")
     return f"""<!doctype html><html lang="uk"><head>
@@ -207,9 +262,14 @@ def page(title: str, body: str, active: str = "") -> str:
     <div class="updated">Сільпо: Білогородка та Стоянка</div></div>
   <nav>{nav}</nav>
 </header>
-<form class="search" action="/search" method="get">
-  <input name="q" placeholder="Знайти товар — напр. «віскі» або «Martini»" autocomplete="off">
+<form class="search" action="{search_action}" method="get">
+  <div class="search-row">
+  <input name="q" value="{e(search_value)}" enterkeyhint="search"
+         placeholder="Знайти товар — напр. «віскі» або «Martini»" autocomplete="off">
   <button type="submit">Шукати</button>
+  {clear}
+</div>
+{filters}
 </form>
 {body}
 <footer>Сторінку сформовано {stamp} · дані оновлюються щодня о 09:00</footer>

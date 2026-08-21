@@ -7,8 +7,44 @@ from datetime import datetime, timedelta, timezone
 from . import history
 
 
+SORT_OPTIONS = (
+    ("", "За знижкою"),
+    ("price_asc", "Спочатку дешевші"),
+    ("price_desc", "Спочатку дорожчі"),
+    ("name", "За назвою"),
+)
+
+GAP_SORT_OPTIONS = (
+    ("", "За різницею, %"),
+    ("gap_uah", "За різницею, ₴"),
+    ("price_asc", "Спочатку дешевші"),
+    ("price_desc", "Спочатку дорожчі"),
+)
+
+
+def _sort_products(rows: list[dict], sort: str) -> list[dict]:
+    if sort == "price_asc":
+        return sorted(rows, key=lambda r: (r["price"], r.get("title") or ""))
+    if sort == "price_desc":
+        return sorted(rows, key=lambda r: (-r["price"], r.get("title") or ""))
+    if sort == "name":
+        return sorted(rows, key=lambda r: (r.get("title") or "").casefold())
+    return sorted(rows, key=lambda r: (-r["score"], r["price"]))
+
+
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict]:
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def categories(conn) -> list[dict]:
+    """Категорії, які реально є в базі — для випадайки фільтра."""
+    return _rows(
+        conn,
+        "SELECT category_slug AS slug, MIN(category_title) AS title, "
+        "       MIN(group_key) AS group_key, COUNT(*) AS n "
+        "FROM products WHERE category_slug IS NOT NULL AND category_slug <> '' "
+        "GROUP BY category_slug ORDER BY group_key, title",
+    )
 
 
 def branches(conn) -> list[dict]:
@@ -77,18 +113,33 @@ def _decorate(conn, row: dict) -> dict:
 
 
 def top_discounts(conn, labels: dict[str, str], limit: int = 10,
-                  branch_id: str | None = None) -> list[dict]:
-    """Найглибші знижки. Ранжуємо за реальною, коли історія дозволяє."""
-    sql = (
-        "SELECT * FROM products WHERE old_price > price AND price > 0 AND stock > 0"
-    )
-    params: tuple = ()
+                  branch_id: str | None = None, query: str = "",
+                  category: str = "", sort: str = "") -> list[dict]:
+    """Найглибші знижки. Ранжуємо за реальною, коли історія дозволяє.
+
+    З пошуковим запитом фільтр «лише зі знижкою» знімається: якщо людина
+    шукає конкретну пляшку, вона хоче побачити її і без акції.
+    """
+    params: list = []
+    if query:
+        sql = "SELECT * FROM products WHERE price > 0 AND ulower(title) LIKE ulower(?)"
+        params.append(f"%{query}%")
+    else:
+        sql = "SELECT * FROM products WHERE old_price > price AND price > 0 AND stock > 0"
+    if category:
+        sql += " AND category_slug = ?"
+        params.append(category)
     if branch_id:
         sql += " AND branch_id = ?"
-        params = (branch_id,)
+        params.append(branch_id)
     # Беремо із запасом: остаточний порядок задає реальна знижка, а не заявлена.
-    sql += " ORDER BY (old_price - price) / old_price DESC LIMIT ?"
-    rows = _rows(conn, sql, params + (limit * 6,))
+    # З явним сортуванням беремо ширшу вибірку, інакше "спочатку дешевші"
+    # покаже дешеве лише серед найглибших знижок.
+    sql += (" ORDER BY price ASC LIMIT ?" if sort == "price_asc"
+            else " ORDER BY price DESC LIMIT ?" if sort == "price_desc"
+            else " ORDER BY title LIMIT ?" if sort == "name"
+            else " ORDER BY (old_price - price) / old_price DESC LIMIT ?")
+    rows = _rows(conn, sql, tuple(params) + (limit * 6,))
 
     decorated = [_decorate(conn, r) for r in rows]
     decorated.sort(key=lambda r: (-r["score"], r["price"]))
@@ -105,15 +156,28 @@ def top_discounts(conn, labels: dict[str, str], limit: int = 10,
         elif row["branch_label"] not in keep["branch_labels"]:
             keep["branch_labels"].append(row["branch_label"])
 
-    out = sorted(best.values(), key=lambda r: (-r["score"], r["price"]))
-    return out[:limit]
+    return _sort_products(list(best.values()), sort)[:limit]
 
 
-def cross_store(conn, labels: dict[str, str], limit: int = 20) -> list[dict]:
+def cross_store(conn, labels: dict[str, str], limit: int = 20,
+                query: str = "", category: str = "", sort: str = "") -> list[dict]:
     """Той самий товар, різна ціна в двох магазинах."""
+    where, extra = "", []
+    if query:
+        where += " AND ulower(a.title) LIKE ulower(?)"
+        extra.append(f"%{query}%")
+    if category:
+        where += " AND a.category_slug = ?"
+        extra.append(category)
+    params = tuple(extra) + (limit,)
+    order = {
+        "gap_uah": "ABS(a.price - b.price) DESC",
+        "price_asc": "MIN(a.price, b.price) ASC",
+        "price_desc": "MIN(a.price, b.price) DESC",
+    }.get(sort, "ABS(a.price - b.price) / MIN(a.price, b.price) DESC")
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT a.product_id, a.title, a.image, a.slug, a.url, a.display_ratio,
                a.category_title,
                a.branch_id AS b1, a.price AS p1, a.stock AS s1,
@@ -125,10 +189,11 @@ def cross_store(conn, labels: dict[str, str], limit: int = 20) -> list[dict]:
         WHERE a.price > 0 AND b.price > 0
           AND ABS(a.price - b.price) > 0.01
           AND a.stock > 0 AND b.stock > 0
-        ORDER BY ABS(a.price - b.price) / MIN(a.price, b.price) DESC
+          {where}
+        ORDER BY {order}
         LIMIT ?
         """,
-        (limit,),
+        params,
     )
     for row in rows:
         cheap_first = row["p1"] <= row["p2"]
@@ -144,12 +209,22 @@ def cross_store(conn, labels: dict[str, str], limit: int = 20) -> list[dict]:
     return rows
 
 
-def fakes(conn, labels: dict[str, str], limit: int = 20) -> list[dict]:
+def fakes(conn, labels: dict[str, str], limit: int = 20, query: str = "",
+          category: str = "", sort: str = "") -> list[dict]:
     """Товари, де перекреслену ціну підняли перед акцією."""
+    where, extra = "", []
+    if query:
+        where += "AND ulower(title) LIKE ulower(?) "
+        extra.append(f"%{query}%")
+    if category:
+        where += "AND category_slug = ? "
+        extra.append(category)
+    params = tuple(extra)
     rows = _rows(
         conn,
         "SELECT * FROM products WHERE old_price > price AND price > 0 "
-        "ORDER BY (old_price - price) / old_price DESC LIMIT 400",
+        f"{where}ORDER BY (old_price - price) / old_price DESC LIMIT 400",
+        params,
     )
     caught = []
     for row in rows:
@@ -160,7 +235,10 @@ def fakes(conn, labels: dict[str, str], limit: int = 20) -> list[dict]:
                 decorated["claimed"] - (decorated["honest"] or 0), 1
             )
             caught.append(decorated)
-    caught.sort(key=lambda r: -r["overstated"])
+    if sort:
+        caught = _sort_products(caught, sort)
+    else:
+        caught.sort(key=lambda r: -r["overstated"])
     return caught[:limit]
 
 
@@ -250,7 +328,7 @@ def category_index(conn, days: int = 30) -> dict:
 def search(conn, query: str, labels: dict[str, str], limit: int = 40) -> list[dict]:
     rows = _rows(
         conn,
-        "SELECT * FROM products WHERE title LIKE ? ORDER BY title LIMIT ?",
+        "SELECT * FROM products WHERE ulower(title) LIKE ulower(?) ORDER BY title LIMIT ?",
         (f"%{query}%", limit),
     )
     out = []

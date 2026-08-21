@@ -9,6 +9,12 @@ from datetime import datetime, timedelta, timezone
 
 from . import history
 
+
+def register_functions(conn) -> None:
+    """SQLite LIKE регістронезалежний лише для ASCII, тож «віскі» не знайшов би
+    «Віскі Kamiki». Даємо йому Python-ський casefold."""
+    conn.create_function("ulower", 1, lambda s: s.casefold() if s else s, deterministic=True)
+
 log = logging.getLogger(__name__)
 
 SCHEMA = """
@@ -77,6 +83,7 @@ class State:
             cur.executescript(SCHEMA)
         self.conn.commit()
         history.init(self.conn)
+        register_functions(self.conn)
 
     def close(self) -> None:
         self.conn.close()
