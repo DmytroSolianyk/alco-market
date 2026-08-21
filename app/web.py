@@ -58,8 +58,6 @@ class Dashboard:
             "filters": webui.filter_bar(
                 analytics.categories(conn, mode, discounts_only),
                 category, sort_options, sort,
-                discounts_only=discounts_only,
-                show_toggle=(mode == "list"),
             ),
             "carry": self._carry(query, category, sort, discounts_only),
         }
@@ -94,7 +92,9 @@ class Dashboard:
 
         title = "Знижки" if discounts_only else "Усі товари"
         body = (webui.kpis(analytics.overview(conn, self.labels))
-                + f'<section><h2>{title}<span class="hint">{hint}</span></h2>{inner}</section>')
+                + "<section>"
+                + webui.section_head(title, hint, webui.discount_toggle(discounts_only))
+                + f"{inner}</section>")
         return webui.page(title, body, active="home", **shell)
 
     def cross_store(self, conn, query: str = "", category: str = "", sort: str = "",
@@ -119,7 +119,8 @@ class Dashboard:
                  if gaps else webui.empty(
                      "Нічого не знайшлось",
                      "Або товару немає в обох магазинах, або він коштує там однаково."))
-        body = f'<section><h2>Де дешевше<span class="hint">{hint}</span></h2>{note}{inner}</section>'
+        body = ("<section>" + webui.section_head("Де дешевше", hint)
+                + f"{note}{inner}</section>")
         return webui.page("Де дешевше", body, active="gap", **shell)
 
     def fakes(self, conn, query: str = "", category: str = "", sort: str = "",
@@ -144,7 +145,7 @@ class Dashboard:
                 f"Історії {days} дн. Накрутку видно тільки тоді, коли ми бачили ціну "
                 f"і до акції, і під час неї — а акції тижневі.")
             hint = "перекреслену ціну підняли перед акцією"
-        body = f'<section><h2>Зал ганьби<span class="hint">{hint}</span></h2>{inner}</section>'
+        body = "<section>" + webui.section_head("Зал ганьби", hint) + f"{inner}</section>"
         return webui.page("Зал ганьби", body, active="fake", **shell)
 
     def index(self, conn, query: str = "", category: str = "", sort: str = "",
@@ -172,9 +173,10 @@ class Dashboard:
                 + webui.pager(page, total, analytics.PAGE_SIZE, "/index", shell["carry"])
                 if found else webui.empty("Нічого не знайшлось", "Спробуй інший запит.")
             )
-            body += (f'<section><h2>Знайдено<span class="hint">{total} '
-                     f'{webui.plural(total, "товар", "товари", "товарів")}</span>'
-                     f'</h2>{inner}</section>')
+            body += ("<section>" + webui.section_head(
+                "Знайдено",
+                f'{total} {webui.plural(total, "товар", "товари", "товарів")}',
+                webui.discount_toggle(discounts_only)) + f"{inner}</section>")
         return webui.page("Індекс цін", body, active="index", **shell)
 
     def product(self, conn, branch_id: str, product_id: str) -> str | None:

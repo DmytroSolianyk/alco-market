@@ -5,6 +5,8 @@ from datetime import datetime
 from html import escape as e
 from urllib.parse import quote_plus
 
+FORM_ID = "filters"
+
 from .formatting import money, plural
 
 GROUP_TITLES = {
@@ -98,8 +100,13 @@ form.search button{background:var(--accent);color:#17150F;border:0;padding:0 1.1
   background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
   background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:1.9rem}
 
-.check{display:flex;align-items:center;gap:.5rem;min-height:var(--tap);
-  margin-top:.35rem;font-size:.85rem;color:var(--soft);cursor:pointer}
+/* Заголовок і галочка в один рядок: галочка стосується списку, тож
+   має стояти поруч із його назвою, а не забирати окремий рядок. */
+.section-head{display:flex;flex-direction:row;align-items:center;
+  justify-content:space-between;gap:.75rem}
+.section-head h2{min-width:0}
+.check{display:inline-flex;align-items:center;gap:.4rem;min-height:var(--tap);
+  font-size:.8rem;color:var(--soft);cursor:pointer;white-space:nowrap;flex-shrink:0}
 .check input{width:20px;height:20px;min-height:0;flex:none;flex-shrink:0;
   accent-color:var(--accent);margin:0}
 
@@ -243,6 +250,8 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
   .gaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(22rem,1fr));
     align-items:stretch}
   h2{flex-direction:row;align-items:baseline;gap:.6rem}
+  .section-head{gap:1rem}
+  .check{font-size:.85rem}
   .detail{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:1.5rem}
   .hero img{width:120px;height:120px}
   h1{font-size:1.5rem}
@@ -253,7 +262,7 @@ footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono
 
 def filter_bar(categories: list[dict], category_value: str,
                sort_options: tuple, sort_value: str,
-               discounts_only: bool = True, show_toggle: bool = True) -> str:
+               ) -> str:
     """Дві нативні випадайки: на телефоні це системний пікер, а не самороб."""
     groups: dict[str, list[dict]] = {}
     for cat in categories:
@@ -277,18 +286,10 @@ def filter_bar(categories: list[dict], category_value: str,
     )
     # Прихований маркер: без нього знята галочка не відрізняється від
     # свіжого заходу на сторінку, бо браузер не шле вимкнений чекбокс.
-    toggle = ""
-    if show_toggle:
-        checked = " checked" if discounts_only else ""
-        toggle = (
-            '<input type="hidden" name="f" value="1">'
-            f'<label class="check"><input type="checkbox" name="d" value="1"{checked}>'
-            "<span>Тільки зі знижкою</span></label>"
-        )
-    return f"""<div class="filters">
+    return f"""<input type="hidden" name="f" value="1"><div class="filters">
 <label class="sel"><span>Категорія</span><select name="cat">{''.join(opts)}</select></label>
 <label class="sel"><span>Сортування</span><select name="sort">{sorts}</select></label>
-</div>{toggle}"""
+</div>"""
 
 
 def page(title: str, body: str, active: str = "",
@@ -323,7 +324,7 @@ def page(title: str, body: str, active: str = "",
   <div class="updated">Сільпо: Білогородка та Стоянка</div>
 </header>
 <nav class="tabs">{nav}</nav>
-<form class="search" action="{search_action}" method="get">
+<form class="search" id="{FORM_ID}" action="{search_action}" method="get">
   <div class="search-row">
   <input name="q" value="{e(search_value)}" enterkeyhint="search"
          placeholder="Знайти товар — напр. «віскі» або «Martini»" autocomplete="off">
@@ -334,7 +335,18 @@ def page(title: str, body: str, active: str = "",
 </form>
 {body}
 <footer>Сторінку сформовано {stamp} · дані оновлюються щодня о 09:00</footer>
-</div></body></html>"""
+</div>
+<script>
+// Випадайки й галочка застосовуються одразу — тиснути «Шукати» після
+// кожної зміни фільтра було б зайвим кроком, надто на телефоні.
+document.querySelectorAll('select[name=cat],select[name=sort],input[name=d]')
+  .forEach(function (el) {{
+    el.addEventListener('change', function () {{
+      (el.form || document.getElementById('{FORM_ID}')).submit();
+    }});
+  }});
+</script>
+</body></html>"""
 
 
 # ----------------------------------------------------------------- фрагменти
@@ -458,6 +470,23 @@ def pager(page: int, total: int, per_page: int, base: str, carry: str) -> str:
         + f'<span class="pg count">{page} / {pages}</span>'
         + link(page + 1, "Далі →", page >= pages)
         + "</nav>"
+    )
+
+
+def discount_toggle(discounts_only: bool) -> str:
+    """Живе поруч із заголовком списку, а не в пошуку — бо стосується саме
+    того, що показано нижче. Прив'язана до форми фільтрів через form=."""
+    checked = " checked" if discounts_only else ""
+    return (
+        f'<label class="check"><input type="checkbox" name="d" value="1" '
+        f'form="{FORM_ID}"{checked}><span>Лише знижки</span></label>'
+    )
+
+
+def section_head(title: str, hint: str, extra: str = "") -> str:
+    return (
+        f'<div class="section-head"><h2>{title}'
+        f'<span class="hint">{hint}</span></h2>{extra}</div>'
     )
 
 
