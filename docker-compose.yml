@@ -9,6 +9,9 @@ services:
     # bind-mount на неіснуючу теку Docker створив би від root — SQLite не відкрився б.
     volumes:
       - silpo-state:/data
+    # Порт назовні не публікуємо: до дашборду ходить лише edge-caddy
+    # за іменем контейнера, і він же тримає авторизацію.
+    networks: [default, web]
     logging:
       driver: json-file
       options:
@@ -17,3 +20,7 @@ services:
 
 volumes:
   silpo-state:
+
+networks:
+  web:
+    external: true

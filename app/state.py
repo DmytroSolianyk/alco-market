@@ -27,6 +27,34 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Довідник товарів: історія цін оперує лише product_id, а дашборду треба
+-- назви, картинки, категорії та поточні залишки.
+CREATE TABLE IF NOT EXISTS products (
+    branch_id      TEXT NOT NULL,
+    product_id     TEXT NOT NULL,
+    title          TEXT,
+    slug           TEXT,
+    url            TEXT,
+    image          TEXT,
+    brand          TEXT,
+    category_slug  TEXT,
+    category_title TEXT,
+    group_key      TEXT,
+    display_ratio  TEXT,
+    display_price  REAL,
+    price          REAL,
+    old_price      REAL,
+    stock          REAL,
+    online_only    INTEGER,
+    rating         REAL,
+    rating_count   INTEGER,
+    first_seen     TEXT,
+    last_seen      TEXT,
+    PRIMARY KEY (branch_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_products_title ON products(title);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(branch_id, category_slug);
 """
 
 
@@ -118,6 +146,35 @@ class State:
                 now,
                 now,
                 1 if notified else 0,
+            ),
+        )
+
+    def upsert_product(self, branch_id: str, product) -> None:
+        """Освіжає довідник товару. Ціни живуть окремо, тут — метадані."""
+        now = _now()
+        self.conn.execute(
+            """
+            INSERT INTO products(branch_id, product_id, title, slug, url, image, brand,
+                                 category_slug, category_title, group_key, display_ratio,
+                                 display_price, price, old_price, stock, online_only,
+                                 rating, rating_count, first_seen, last_seen)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(branch_id, product_id) DO UPDATE SET
+                title=excluded.title, slug=excluded.slug, url=excluded.url,
+                image=excluded.image, brand=excluded.brand,
+                category_slug=excluded.category_slug,
+                category_title=excluded.category_title, group_key=excluded.group_key,
+                display_ratio=excluded.display_ratio, display_price=excluded.display_price,
+                price=excluded.price, old_price=excluded.old_price, stock=excluded.stock,
+                online_only=excluded.online_only, rating=excluded.rating,
+                rating_count=excluded.rating_count, last_seen=excluded.last_seen
+            """,
+            (
+                branch_id, product.product_id, product.title, product.slug, product.url,
+                product.image_url, product.brand, product.category_slug,
+                product.category_title, product.group_key, product.display_ratio,
+                product.display_price, product.price, product.old_price, product.stock,
+                int(product.online_only), product.rating, product.rating_count, now, now,
             ),
         )
 

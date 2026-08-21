@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import threading
 
 from . import bot as bot_module
+from . import web as web_module
 from . import catalog, formatting, history
 from .candidate import Candidate, branches_label, build_candidate, group_identical
 from .config import CATEGORY_GROUPS, Config
@@ -70,6 +71,7 @@ def scan_catalog(cfg: Config, silpo: SilpoClient, state: State) -> dict[str, lis
                     if product.product_id in products:
                         continue
                     products[product.product_id] = product
+                    state.upsert_product(branch.branch_id, product)
                     statuses[product.product_id] = history.record(
                         state.conn,
                         branch.branch_id,
@@ -346,6 +348,11 @@ def watch(cfg: Config) -> None:
     else:
         log.info("Слухач команд вимкнено (ENABLE_COMMANDS=false)")
 
+    if cfg.web_enabled:
+        web_module.start_in_background(cfg, stop_event)
+    else:
+        log.info("Дашборд вимкнено (WEB_ENABLED=false)")
+
     if os.getenv("RUN_ON_START", "true").lower() in {"1", "true", "yes"}:
         try:
             run_once(cfg)
@@ -444,6 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("bot", help="лише слухач команд, без розкладу")
     sub.add_parser("setcommands", help="зареєструвати меню команд у Telegram")
     sub.add_parser("history", help="статистика зібраної історії цін")
+    sub.add_parser("web", help="лише дашборд, без розкладу і бота")
 
     p_branches = sub.add_parser("branches", help="знайти branchId за містом/адресою")
     p_branches.add_argument("--search", default="", help="місто або частина адреси")
@@ -511,6 +519,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  записів про зміну ціни: {info['rows']}")
             print(f"  збираємо з: {info['since'] or '—'}")
         state.close()
+        return 0
+    if command == "web":
+        stop_event = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
+        signal.signal(signal.SIGINT, lambda *_: stop_event.set())
+        web_module.serve(cfg, stop_event)
         return 0
     if command == "bot":
         stop_event = threading.Event()

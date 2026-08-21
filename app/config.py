@@ -96,6 +96,8 @@ class Config:
     seed_on_first_run: bool
     notify_mode: str
     enable_commands: bool
+    web_enabled: bool
+    web_port: int
     track_history: bool
     history_points: int
     rank_by_honest: bool
@@ -137,6 +139,8 @@ class Config:
             seed_on_first_run=_env_bool("SEED_ON_FIRST_RUN", True),
             notify_mode=_env("NOTIFY_MODE", "off").lower(),
             enable_commands=_env_bool("ENABLE_COMMANDS", True),
+            web_enabled=_env_bool("WEB_ENABLED", True),
+            web_port=_env_int("WEB_PORT", 8080),
             track_history=_env_bool("TRACK_PRICE_HISTORY", True),
             history_points=_env_int("HISTORY_POINTS", 4),
             rank_by_honest=_env_bool("RANK_BY_HONEST_DISCOUNT", True),
