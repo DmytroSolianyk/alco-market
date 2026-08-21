@@ -123,11 +123,15 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 .card-link{flex:1;display:flex;gap:.75rem;align-items:flex-start;
   padding:.75rem .75rem .5rem}
 .card-link:active{background:var(--sunk)}
-.buy{display:flex;align-items:center;justify-content:center;gap:.4rem;
-  margin:0 .75rem .75rem;min-height:40px;background:var(--accent-soft);
-  color:var(--ink);font-size:.85rem;font-weight:600;border:1px solid var(--accent)}
-.buy:active{background:var(--accent);color:#17150F}
-@media (hover:hover){.buy:hover{background:var(--accent);color:#17150F}}
+/* Скромне текстове посилання в правому нижньому куті. Рамки й заливки
+   немає, але падінги тримають тап-ціль близько 40 px. */
+.buy{align-self:flex-end;display:inline-flex;align-items:center;gap:.3rem;
+  margin:0 .4rem .35rem;padding:.45rem .4rem;min-height:36px;
+  background:transparent;border:0;color:var(--accent);
+  font-size:.8rem;font-weight:600;white-space:nowrap}
+.buy:active{color:var(--ink)}
+@media (hover:hover){.buy:hover{text-decoration:underline;
+  text-underline-offset:.2em}}
 .thumb{width:60px;height:60px;flex-shrink:0;object-fit:contain;background:var(--sunk)}
 .card-main{min-width:0;display:flex;flex-direction:column;gap:.3rem;flex:1}
 .card-meta:last-child{margin-top:auto;padding-top:.15rem}
@@ -192,8 +196,8 @@ h2 .hint{font-size:.75rem;font-weight:400;color:var(--faint)}
 .facts dt{color:var(--faint);flex-shrink:0}
 .facts dd{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
 .hero{display:flex;gap:.9rem;align-items:flex-start}
-.hero-buy{margin-top:.6rem}
-.hero-buy .buy{margin:0;padding:0 1rem}
+.hero-buy{margin-top:.4rem}
+.hero-buy .buy{align-self:flex-start;margin:0;padding:.4rem 0}
 .hero img{width:88px;height:88px;flex-shrink:0;object-fit:contain;background:var(--sunk)}
 h1{font-size:1.25rem;letter-spacing:-.02em;line-height:1.25}
 footer{border-top:1px solid var(--rule);padding-top:.8rem;font-family:var(--mono);
